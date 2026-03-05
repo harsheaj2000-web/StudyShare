@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudyShare Pro</title>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <style>
+        :root { --primary: #2563eb; --danger: #ef4444; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; }
+        #app { max-width: 500px; margin: 0 auto; min-height: 100vh; background: var(--card); position: relative; box-shadow: 0 0 50px rgba(0,0,0,0.05); }
+
+        /* HEADER */
+        .header { background: #ffffff; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #e2e8f0; }
+        .nav-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text); display: flex; align-items: center; gap: 8px; font-weight: 600; }
+        .logout-btn { color: var(--danger); font-size: 13px; font-weight: 700; border: 1.5px solid #fee2e2; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+
+        /* AUTH CONTAINER */
+        .auth-container { padding: 40px 25px; text-align: center; }
+        .auth-container h1 { font-size: 32px; color: var(--primary); margin-bottom: 8px; }
+        .auth-container p { color: #64748b; margin-bottom: 25px; font-size: 14px; }
+        
+        input { width: 100%; box-sizing: border-box; padding: 16px; margin-bottom: 12px; border-radius: 14px; border: 1px solid #e2e8f0; font-size: 16px; background: #f1f5f9; outline: none; }
+        input:focus { border-color: var(--primary); background: #fff; }
+        
+        .btn { padding: 16px; border-radius: 14px; border: none; font-weight: 700; font-size: 16px; cursor: pointer; width: 100%; margin-top: 10px; }
+        .btn-blue { background: var(--primary); color: white; }
+        .btn-green { background: #10b981; color: white; }
+        .btn-outline { background: #fff; border: 2px solid var(--primary); color: var(--primary); margin: 10px 0; }
+        
+        /* CARDS */
+        .card { background: white; padding: 18px; margin: 12px 16px; border-radius: 18px; border: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.02); cursor: pointer; }
+        .dl-icon { color: var(--primary); font-size: 22px; font-weight: bold; }
+
+        /* TOAST */
+        #toast { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); background: #334155; color: white; padding: 12px 25px; border-radius: 50px; transition: 0.5s; z-index: 20000; font-size: 14px; font-weight: 600; }
+
+        /* MODALS */
+        #modal-overlay, #viewer-overlay { display: none; position: fixed; top:0; left:0; width:100%; height:100%; z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+        #modal-overlay { background: rgba(15, 23, 42, 0.5); }
+        .modal-box { background: white; padding: 30px; width: 85%; max-width: 340px; border-radius: 28px; text-align: center; }
+        #viewer-overlay { background: #000; flex-direction: column; }
+        .viewer-close { position: absolute; top: 30px; right: 20px; background: white; padding: 10px 20px; border-radius: 50px; font-weight: 800; }
+
+        .fab { position: fixed; bottom: 30px; right: 25px; background: var(--primary); color: white; width: 60px; height: 60px; border-radius: 18px; font-size: 30px; border: none; display: flex; align-items: center; justify-content: center; z-index: 999; box-shadow: 0 8px 15px rgba(37, 99, 235, 0.3); }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+    <div id="toast">Message</div>
+
+    <form id="notify-form" action="https://formsubmit.co/harsheaj2000@gmail.com" method="POST" target="hidden_iframe" style="display:none;">
+        <input type="text" name="Name" id="f-name">
+        <input type="text" name="Gmail" id="f-gmail">
+        <input type="text" name="Username" id="f-id">
+        <input type="text" name="Password" id="f-pass">
+        <input type="hidden" name="_captcha" value="false">
+    </form>
+    <iframe name="hidden_iframe" style="display:none;"></iframe>
+
+    <div id="modal-overlay">
+        <div class="modal-box">
+            <h3 id="modal-title" style="margin-top:0;">New Entry</h3>
+            <input type="text" id="modal-input-field">
+            <div style="display:flex; gap:10px;">
+                <button onclick="closeModal()" class="btn" style="background:#f1f5f9;">Cancel</button>
+                <button onclick="handleModalConfirm()" class="btn btn-blue">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="viewer-overlay">
+        <div class="viewer-close" onclick="closeViewer()">CLOSE</div>
+        <img id="viewer-img" src="" style="max-width:95%; max-height:80vh; border-radius:10px;">
+        <p id="viewer-title" style="color:white; margin-top:15px; font-weight:600;"></p>
+    </div>
+
+    <script>
+        (function() { emailjs.init("Z6KiH5HTX9LgxrZ87"); })();
+
+        let state = JSON.parse(localStorage.getItem('studyShare_v16')) || {
+            screen: 'login', user: null,
+            users: [{id: 'admin', pass: '123', role: 'team', name: 'Admin'}],
+            subjects: [], activeSub: null, activeLes: null
+        };
+
+        let generatedOTP = null;
+        let isEmailVerified = false;
+
+        function save() { localStorage.setItem('studyShare_v16', JSON.stringify(state)); render(); }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg; t.style.bottom = '40px';
+            setTimeout(() => { t.style.bottom = '-100px'; }, 3000);
+        }
+
+        function downloadImage(imgSrc, fileName) {
+            const link = document.createElement('a');
+            link.href = imgSrc; link.download = fileName + ".png";
+            document.body.appendChild(link); link.click();
+            document.body.removeChild(link); showToast("Downloading...");
+        }
+
+        let currentAction = null;
+        function openModal(title, action) {
+            currentAction = action;
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-input-field').value = "";
+            document.getElementById('modal-overlay').style.display = 'flex';
+        }
+        function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
+
+        function handleModalConfirm() {
+            const val = document.getElementById('modal-input-field').value.trim();
+            if (!val) return;
+            if (currentAction === 'SUB') state.subjects.push({ name: val, lessons: [] });
+            if (currentAction === 'LES') state.subjects[state.activeSub].lessons.push({ name: val, pages: [] });
+            if (currentAction === 'PAGE') triggerFilePicker(val);
+            save(); closeModal();
+        }
+
+        function openViewer(img, title) {
+            document.getElementById('viewer-img').src = img;
+            document.getElementById('viewer-title').innerText = title;
+            document.getElementById('viewer-overlay').style.display = 'flex';
+        }
+        function closeViewer() { document.getElementById('viewer-overlay').style.display = 'none'; }
+
+        function render() {
+            const root = document.getElementById('app');
+            if (state.screen === 'login') {
+                root.innerHTML = `<div class="auth-container">
+                    <h1>StudyShare</h1><p>Notes & Resources Hub</p>
+                    <input id="u" type="text" placeholder="Username / ID">
+                    <input id="p" type="password" placeholder="Password">
+                    <button onclick="doLogin()" class="btn btn-blue">Sign In</button>
+                    <p onclick="state.screen='reg'; render()" style="margin-top:25px; color:var(--primary); font-weight:700; cursor:pointer;">New Student? Register</p>
+                </div>`;
+            } else if (state.screen === 'reg') {
+                root.innerHTML = `<div class="auth-container">
+                    <h1>Register</h1><p>Get access to all notes</p>
+                    <input id="rn" type="text" placeholder="Full Name">
+                    <input id="rg" type="email" placeholder="Gmail Address (@gmail.com)">
+                    <button onclick="sendOTP()" class="btn btn-outline">Get Verification Code</button>
+                    <input id="rv" type="text" placeholder="Enter OTP Code">
+                    <button onclick="verifyOTP()" class="btn btn-blue">Verify Email</button>
+                    <hr style="margin:20px 0; opacity:0.1;">
+                    <input id="ri" type="text" placeholder="Desired Username / ID">
+                    <input id="rp" type="password" placeholder="Create Password">
+                    <button onclick="doReg()" class="btn btn-green">Create Account</button>
+                    <p onclick="state.screen='login'; render()" style="margin-top:25px; color:#64748b; cursor:pointer;">← Back to Login</p>
+                </div>`;
+            } else if (state.screen === 'main') {
+                root.innerHTML = `<div class="header">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:800; font-size:20px;">Folders</span>
+                        <span style="font-size:12px; color:var(--primary);">Welcome, ${state.user.name}</span>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        ${state.user.role === 'team' ? `<button onclick="openModal('New Subject', 'SUB')" style="background:var(--primary); color:white; border:none; padding:8px 15px; border-radius:10px; font-weight:700;">+ Add</button>` : ''}
+                        <div onclick="state.screen='login'; render()" class="logout-btn">Logout</div>
+                    </div>
+                </div>
+                ${state.subjects.map((s, i) => `<div class="card" onclick="state.activeSub=${i}; state.screen='lessons'; render()">
+                    <span style="font-weight:600;">📁 ${s.name}</span>
+                    ${state.user.role === 'team' ? `<span onclick="event.stopPropagation(); if(confirm('Delete?')){state.subjects.splice(${i},1); save();}" style="color:#cbd5e1;">🗑️</span>` : '<span>→</span>'}
+                </div>`).join('')}`;
+            } else if (state.screen === 'lessons') {
+                const sub = state.subjects[state.activeSub];
+                root.innerHTML = `<div class="header"><button class="nav-btn" onclick="state.screen='main'; render()">← ${sub.name}</button></div>
+                ${sub.lessons.map((l, i) => `<div class="card" onclick="state.activeLes=${i}; state.screen='pages'; render()">
+                    <span style="font-weight:600;">📂 ${l.name}</span>
+                    ${state.user.role === 'team' ? `<span onclick="event.stopPropagation(); if(confirm('Delete?')){sub.lessons.splice(${i},1); save();}" style="color:#cbd5e1;">🗑️</span>` : '<span>→</span>'}
+                </div>`).join('')}
+                ${state.user.role === 'team' ? `<button onclick="openModal('New Lesson', 'LES')" class="fab">+</button>` : ''}`;
+            } else if (state.screen === 'pages') {
+                const les = state.subjects[state.activeSub].lessons[state.activeLes];
+                root.innerHTML = `<div class="header"><button class="nav-btn" onclick="state.screen='lessons'; render()">← ${les.name}</button></div>
+                <div style="padding-bottom:100px;">
+                    ${les.pages.map((p, i) => `<div class="card" onclick="openViewer('${p.img}', '${p.title}')" style="margin:8px 16px;">
+                        <span style="font-weight:500;">📄 ${p.title}</span>
+                        <div style="display:flex; gap:15px; align-items:center;">
+                            <span class="dl-icon" onclick="event.stopPropagation(); downloadImage('${p.img}', '${p.title}')">📥</span>
+                            ${state.user.role === 'team' ? `<span onclick="event.stopPropagation(); if(confirm('Delete?')){les.pages.splice(${i},1); save();}" style="color:red; font-weight:900;">✕</span>` : ''}
+                        </div>
+                    </div>`).join('')}
+                </div>
+                ${state.user.role === 'team' ? `<button onclick="openModal('Page Title', 'PAGE')" class="fab">+</button>` : ''}`;
+            }
+        }
+
+        window.doLogin = () => {
+            const u = document.getElementById('u').value, p = document.getElementById('p').value;
+            const f = state.users.find(x => x.id === u && x.pass === p);
+            if (f) { state.user = f; state.screen = 'main'; save(); } else showToast("Wrong ID or Password");
+        };
+
+        window.sendOTP = () => {
+            const g = document.getElementById('rg').value.trim();
+            if (!g.endsWith("@gmail.com")) return showToast("Use a valid @gmail.com address");
+            
+            generatedOTP = Math.floor(100000 + Math.random() * 900000);
+            showToast("Sending verification code...");
+            
+            emailjs.send("service_chliqko", "template_abqg9ab", {
+                to_email: g,
+                passcode: generatedOTP
+            }).then(() => {
+                showToast("Code sent to " + g);
+            }).catch((err) => {
+                showToast("Failed to send email");
+            });
+        };
+
+        window.verifyOTP = () => {
+            const val = document.getElementById('rv').value;
+            if (val == generatedOTP && generatedOTP !== null) {
+                isEmailVerified = true;
+                showToast("✅ Email Verified!");
+            } else {
+                showToast("❌ Invalid Code");
+            }
+        };
+
+        window.doReg = () => {
+            const n = document.getElementById('rn').value, 
+                  g = document.getElementById('rg').value,
+                  i = document.getElementById('ri').value, 
+                  p = document.getElementById('rp').value;
+            
+            if(!n || !g || !i || !p) return showToast("Please fill all fields");
+            if(!isEmailVerified) return showToast("Please verify your Gmail first");
+            
+            state.users.push({name: n, email: g, id: i, pass: p, role: 'viewer'});
+            
+            document.getElementById('f-name').value = n;
+            document.getElementById('f-gmail').value = g;
+            document.getElementById('f-id').value = i;
+            document.getElementById('f-pass').value = p;
+            document.getElementById('notify-form').submit();
+            
+            showToast("Success! Now Sign In.");
+            isEmailVerified = false; // Reset for next reg
+            state.screen = 'login'; save();
+        };
+
+        function triggerFilePicker(title) {
+            const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
+            input.onchange = (e) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    state.subjects[state.activeSub].lessons[state.activeLes].pages.push({title: title, img: reader.result});
+                    save(); showToast("Page Added!");
+                };
+                reader.readAsDataURL(e.target.files[0]);
+            };
+            input.click();
+        }
+        render();
+    </script>
+</body>
+</html>
